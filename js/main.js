@@ -8,7 +8,9 @@ const isLocalHost = ['localhost', '127.0.0.1'].includes(location.hostname);
 const API = (isLocalHost && params.get('api')) || API_URL;
 const USE_LOCAL = params.has('dev') || !API || (isLocalHost && !params.has('prod') && !params.get('api'));
 let api = USE_LOCAL ? new LocalApi({ contentUrl: '../content/dist/content.dev.json' }) : new ProdApi(API);
-let ANTICHEAT = params.get('ac') !== '0';
+// ?ac=0 mematikan anti-cheat hanya untuk tes: di localhost atau akun UJI (dicek setelah login)
+const AC_OFF = params.get('ac') === '0';
+let ANTICHEAT = true;
 let offset = 0;                                  // selisih jam server - jam PC
 const nowMs = () => Date.now() + offset;
 
@@ -618,7 +620,7 @@ async function boot() {
         api = new LocalApi({ content: res.content, key: 'bf-santai-' + res.nim, santai: true });
         res = await api.login(res.nim);
       }
-      if (api.isSantai) ANTICHEAT = false;
+      if (api.isSantai || (AC_OFF && (isLocalHost || res.lab === 'UJI'))) ANTICHEAT = false;
       offset = res.offset || 0;
       C = res.content;
       S = res.state;
