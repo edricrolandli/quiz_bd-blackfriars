@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mesin Analitik Blackfriars</title>
+<link rel="stylesheet" href="css/game.css">
+</head>
+<body>
+<div id="app">
+
+  <section id="login" class="screen">
+    <div class="login-card">
+      <div class="crest" id="login-crest"></div>
+      <h1>Malam yang Berulang di Blackfriars</h1>
+      <p class="sub">Quiz praktikum Basis Data · London, 1891</p>
+      <label>NIM<input id="in-nim" autocomplete="off" inputmode="numeric" placeholder="251401001"></label>
+      <label>Kode akses<input id="in-code" autocomplete="off" placeholder="dari email USU-mu"></label>
+      <p class="err" id="login-err"></p>
+      <button id="btn-login" class="primary">Masuk</button>
+      <p class="fine">Begitu masuk, game berjalan dalam layar penuh. Keluar dari layar penuh atau pindah tab/jendela dicatat sebagai pelanggaran. Pelanggaran ketiga mengunci game sampai asisten membukanya.</p>
+    </div>
+  </section>
+
+  <section id="loading" class="screen hidden">
+    <div class="loading-card">
+      <div class="spinner"></div>
+      <p id="loading-text">Menyalakan Mesin Analitik…</p>
+    </div>
+  </section>
+
+  <section id="ready" class="screen hidden">
+    <div class="login-card">
+      <h2>Mesin siap</h2>
+      <p id="ready-text">Tekan tombol di bawah untuk mulai. Game akan masuk ke layar penuh.</p>
+      <button id="btn-start" class="primary">Mulai</button>
+    </div>
+  </section>
+
+  <section id="game" class="hidden">
+    <header id="topbar">
+      <div class="brand">Mesin Analitik · Blackfriars</div>
+      <div id="progress"></div>
+      <div class="stats">
+        <span id="stat-score" title="Nilai">0</span>
+        <span id="stat-viol" title="Pelanggaran">0/3</span>
+        <span id="stat-timer" title="Sisa waktu">100:00</span>
+      </div>
+    </header>
+
+    <div id="stage" class="hidden">
+      <div id="stage-bg"></div>
+      <div id="stage-title" class="hidden"><div class="t1"></div><div class="t2"></div></div>
+      <div id="console" class="hidden">
+        <div class="console-head">Mesin Analitik · perintah</div>
+        <pre id="console-sql"></pre>
+        <div id="console-result"></div>
+        <p id="console-note"></p>
+      </div>
+      <div id="dialog">
+        <div id="portrait"></div>
+        <div class="dialog-body">
+          <div id="speaker"></div>
+          <p id="line"></p>
+        </div>
+        <div class="dialog-actions">
+          <button id="btn-all" class="ghost">Tampilkan semua</button>
+          <button id="btn-next" class="primary">Lanjut</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="work" class="hidden">
+      <aside id="arsip">
+        <div class="panel-head">Arsip Mesin</div>
+        <div id="tables"></div>
+      </aside>
+      <section id="soal">
+        <div class="bab-label" id="bab-label"></div>
+        <h2 id="bab-title"></h2>
+        <p id="bab-intro" class="intro"></p>
+        <div class="box">
+          <div class="box-label">Soal</div>
+          <p id="bab-soal"></p>
+          <div class="box-label">Bentuk hasil</div>
+          <p id="bab-bentuk" class="mono"></p>
+        </div>
+        <details id="catatan-wrap" open>
+          <summary>Catatan (gratis)</summary>
+          <ul id="bab-catatan"></ul>
+        </details>
+        <div id="hints"></div>
+        <div class="hint-actions">
+          <button id="btn-h1">Hint 1 · maks 75%</button>
+          <button id="btn-h2">Hint 2 · maks 50%</button>
+          <button id="btn-sol" class="danger-ghost">Tampilkan solusi · 0</button>
+        </div>
+      </section>
+      <section id="editor-wrap">
+        <div class="editor-bar">
+          <span>Bahasa Mesin (SQL)</span>
+          <span class="kbd">Ctrl + Enter = jalankan</span>
+        </div>
+        <textarea id="editor" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        <div class="editor-actions">
+          <button id="btn-run" class="primary">Jalankan</button>
+          <button id="btn-check" class="hidden">Periksa</button>
+          <button id="btn-reset" class="ghost">Reset data</button>
+          <span id="run-status"></span>
+        </div>
+        <div id="feedback" class="hidden"></div>
+        <div id="result"></div>
+      </section>
+    </div>
+
+    <div id="overlay-fs" class="overlay hidden">
+      <div class="overlay-card">
+        <h2>Kembali ke layar penuh</h2>
+        <p id="fs-text">Kamu keluar dari layar penuh atau pindah tab. Ini dicatat sebagai pelanggaran.</p>
+        <button id="btn-fs" class="primary">Kembali ke game</button>
+      </div>
+    </div>
+
+    <div id="overlay-lock" class="overlay lock hidden">
+      <div class="overlay-card">
+        <h2>Game terkunci</h2>
+        <p>Pelanggaran ketiga tercatat. Panggil asisten untuk membuka kunci. Waktu tetap berjalan.</p>
+        <p class="fine" id="lock-status">Menunggu asisten…</p>
+        <div id="dev-unlock" class="hidden"><button id="btn-dev-unlock">(dev) Buka kunci</button></div>
+      </div>
+    </div>
+
+    <div id="overlay-end" class="overlay hidden">
+      <div class="overlay-card">
+        <h2 id="end-title">Waktu habis</h2>
+        <p id="end-text"></p>
+      </div>
+    </div>
+
+    <div id="toast" class="hidden"></div>
+  </section>
+</div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
