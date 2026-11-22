@@ -107,6 +107,10 @@ function renderGrid(last, el, meta, showCount = true) {
   const info = showCount ? `<div class="result-meta">${esc(meta || '')}${last.rowCount} baris${more}</div>` : '';
   el.innerHTML = `${info}<table class="grid"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
+// Aturan desain: potongan SQL di dalam bacaan memakai font SQL, supaya '' tidak terbaca seperti "
+function rich(s) {
+  return esc(s).replace(/(^|[\s(=>])('(?:[^'\n]|''){1,40}')(?=[\s.,;:)]|$)/g, '$1<code class="sql">$2</code>');
+}
 function feedback(kind, html) {
   const f = $('feedback');
   if (!kind) { f.classList.add('hidden'); return; }
@@ -257,8 +261,8 @@ function renderHints(id) {
   const ch = C.chapters[id];
   const tx = (S.hintTexts && S.hintTexts[id]) || {};
   let html = '';
-  if (level >= 1 && tx.hint1) html += `<div class="hint"><b>Hint 1.</b> ${esc(tx.hint1)}</div>`;
-  if (level >= 2 && tx.hint2) html += `<div class="hint"><b>Hint 2.</b> ${esc(tx.hint2)}</div>`;
+  if (level >= 1 && tx.hint1) html += `<div class="hint"><b>Hint 1.</b> ${rich(tx.hint1)}</div>`;
+  if (level >= 2 && tx.hint2) html += `<div class="hint"><b>Hint 2.</b> ${rich(tx.hint2)}</div>`;
   if (level >= 3 && tx.solution) html += `<div class="hint"><b>Solusi.</b><pre class="solution">${esc(tx.solution)}</pre></div>`;
   $('hints').innerHTML = html;
   $('btn-h1').disabled = level >= 1 || !!S.done[id];
@@ -315,10 +319,10 @@ async function runChapter(id) {
   $('bab-intro').textContent = nameOf(ch.intro || '');
   $('bab-known').innerHTML = ch.known ? `<b>Yang sudah kamu tahu:</b> ${esc(ch.known)}` : '';
   $('soal-label').textContent = ch.points ? `Soal (${ch.points} poin)` : 'Soal';
-  $('bab-soal').textContent = ch.soal;
+  $('bab-soal').innerHTML = rich(ch.soal);
   $('bab-pakai').textContent = ch.pakai;
   $('bab-bentuk').textContent = ch.bentuk;
-  $('bab-catatan').innerHTML = (ch.catatan || []).map((c) => `<li>${esc(c)}</li>`).join('');
+  $('bab-catatan').innerHTML = (ch.catatan || []).map((c) => `<li>${rich(c)}</li>`).join('');
   const before = ch.prev && !ch.carry ? answerOf(ch.prev).trim() : '';
   $('prev-block').classList.toggle('hidden', !before);
   $('prev-sql').textContent = before;
