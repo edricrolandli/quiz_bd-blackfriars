@@ -16,12 +16,13 @@ function hintTexts(content, hints) {
 
 function selectFeedback(ch, fp) {
   const exp = ch.expect;
-  if (fp && fp.hash === exp.hash) return { correct: true };
+  const accepted = [exp, ...(exp.alt || [])];   // alt = bentuk lain yang juga benar
+  if (fp && accepted.some((e) => fp.hash === e.hash)) return { correct: true };
   let fb;
   if (!fp) fb = 'Query-mu belum menghasilkan tabel.';
   else if (fp.cols !== exp.cols) fb = `Hasilmu ${fp.cols} kolom, Mesin mengharapkan ${exp.cols} kolom.`;
   else if (fp.rows !== exp.rows) fb = `Hasilmu ${fp.rows} baris, Mesin mengharapkan ${fp.rows < exp.rows ? 'lebih banyak' : 'lebih sedikit'}.`;
-  else if (ch.ordered && fp.unorderedHash === exp.hashUnordered) fb = 'Isinya sudah benar, tinggal urutan barisnya.';
+  else if (ch.ordered && accepted.some((e) => fp.unorderedHash === e.hashUnordered)) fb = 'Isinya sudah benar, tinggal urutan barisnya.';
   else fb = 'Jumlah baris dan kolom sudah pas, tapi isinya belum cocok. Cek nilai dan format tiap kolom.';
   return { correct: false, feedback: fb };
 }
