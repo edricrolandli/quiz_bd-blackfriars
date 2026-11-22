@@ -66,8 +66,9 @@ export function evaluateSteps(spec, outputs) {
 // Konten untuk browser saat dinilai: tanpa solusi, hint, sidik jari kunci, dan harapan langkah.
 export function stripContent(full) {
   const c = JSON.parse(JSON.stringify(full));
+  c.replay = { prolog: full.replay.prolog };
   for (const ch of Object.values(c.chapters)) {
-    delete ch.solution; delete ch.hint1; delete ch.hint2; delete ch.expect;
+    delete ch.solution; delete ch.hint1; delete ch.hint2; delete ch.expect; delete ch.after;
     if (ch.steps) ch.steps = ch.steps.map((s) => ({ sql: s.sql, rollback: !!s.rollback }));
   }
   return c;

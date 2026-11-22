@@ -1,6 +1,7 @@
 import { LocalApi, ProdApi, SessionError, ClosedError } from './api.js';
 import { BG, PORTRAIT } from './art.js';
 import { API_URL } from './config.js';
+import { describeError } from './sqlerror.js';
 
 const params = new URLSearchParams(location.search);
 const isLocalHost = ['localhost', '127.0.0.1'].includes(location.hostname);
@@ -16,8 +17,6 @@ const nowMs = () => Date.now() + offset;
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const CHAPTER_ORDER = ['prolog', 'bab1', 'bab2', 'bab3', 'bab4', 'bab5', 'bab6', 'bonus'];
-const CHAPTER_LABEL = { prolog: 'Prolog', bab1: 'Bab 1', bab2: 'Bab 2', bab3: 'Bab 3', bab4: 'Bab 4', bab5: 'Bab 5', bab6: 'Bab 6', bonus: 'Bonus' };
 
 let C = null;          // konten
 let S = null;          // state pemain (dari backend)
@@ -25,6 +24,23 @@ let playerName = null;
 let deadline = 0;
 let ended = false;
 let locked = false;
+let busy = false;       // satu perintah pada satu waktu
+
+// Draft dan notes: hanya di tab ini dan per NIM. PC lab dipakai bergantian antar lab,
+// jadi tidak boleh tersimpan di localStorage.
+let storePrefix = '';
+function openStore(nim) {
+  storePrefix = 'bf:' + nim + ':';
+  try {
+    for (const k of Object.keys(localStorage)) if (k.startsWith('bf-draft-')) localStorage.removeItem(k);
+    for (const k of Object.keys(sessionStorage)) if (k.startsWith('bf:') && !k.startsWith(storePrefix)) sessionStorage.removeItem(k);
+  } catch (e) { /* abaikan */ }
+}
+function readStore(key) { try { return sessionStorage.getItem(storePrefix + key); } catch (e) { return null; } }
+function writeStore(key, value) { try { sessionStorage.setItem(storePrefix + key, value); } catch (e) { /* abaikan */ } }
+function clearStore() {
+  try { for (const k of Object.keys(sessionStorage)) if (k.startsWith('bf:')) sessionStorage.removeItem(k); } catch (e) { /* abaikan */ }
+}
 
 // ---------------------------------------------------------------------------------
 // Mesin (PGlite di Web Worker) dengan batas waktu
@@ -68,9 +84,9 @@ function replayScripts() {
   const done = (S && S.done) || {};
   const out = [C.dataset];
   if (playerName) out.push(C.replay.prolog.replace('{NAMA_SQL}', sqlString(playerName)));
-  if (done.bab5) out.push(C.replay.bab5);
-  if (done.bab6) out.push(C.replay.bab6);
-  if (done.bonus) out.push(C.chapters.bonus.solution);
+  // perintah bab yang sudah selesai dikirim server lewat state, bukan bersama konten
+  const replay = (S && S.replay) || {};
+  for (const id of ['bab5', 'bab6', 'bab6b', 'bonus']) if (done[id] && replay[id]) out.push(replay[id]);
   return out;
 }
 
@@ -83,12 +99,13 @@ function toast(msg, ms = 2600) {
   const t = $('toast'); t.textContent = msg; t.classList.remove('hidden');
   clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.add('hidden'), ms);
 }
-function renderGrid(last, el, meta) {
+function renderGrid(last, el, meta, showCount = true) {
   if (!last) { el.innerHTML = meta ? `<div class="result-meta">${esc(meta)}</div>` : ''; return; }
   const head = last.fields.map((f) => `<th>${esc(f.name)}</th>`).join('');
   const body = last.rows.map((r) => '<tr>' + r.map((v) => v === null ? '<td class="null">[null]</td>' : `<td>${esc(v)}</td>`).join('') + '</tr>').join('');
-  const more = last.rowCount > last.rows.length ? ` · ditampilkan ${last.rows.length} baris pertama` : '';
-  el.innerHTML = `<div class="result-meta">${esc(meta || '')}${last.rowCount} baris${more}</div><table class="grid"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  const more = last.rowCount > last.rows.length ? `, ditampilkan ${last.rows.length} baris pertama` : '';
+  const info = showCount ? `<div class="result-meta">${esc(meta || '')}${last.rowCount} baris${more}</div>` : '';
+  el.innerHTML = `${info}<table class="grid"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
 function feedback(kind, html) {
   const f = $('feedback');
@@ -155,7 +172,6 @@ $('btn-next').addEventListener('click', () => {
   if (typing && typeLine.finish) { typeLine.finish(); return; }
   if (nextResolve) { const r = nextResolve; nextResolve = null; r(); }
 });
-$('btn-all').addEventListener('click', () => { if (typing && typeLine.finish) typeLine.finish(); });
 
 async function sayLine(ln) {
   const who = ln.who || 'narasi';
@@ -164,8 +180,14 @@ async function sayLine(ln) {
   $('speaker').textContent = nameOf(ch.name || '');
   $('line').style.fontStyle = who === 'narasi' ? 'italic' : 'normal';
   $('dialog').classList.remove('hidden');
+  if (ln.table) showReport(ln.table);
   await typeLine(nameOf(ln.text));
   await waitNext();
+  if (ln.table) $('console').classList.add('hidden');
+}
+function showReport(t) {
+  renderGrid({ fields: t.fields.map((name) => ({ name })), rows: t.rows, rowCount: t.rows.length }, $('console-result'), '', false);
+  $('console').classList.remove('hidden');
 }
 async function playLines(lines, bg) {
   showStage(); setBg(bg || currentBg || 'mesin');
@@ -189,21 +211,7 @@ function showTitle(t1, t2, mode) {
 async function runMachineScene(id) {
   const m = C.machine[id];
   await playLines(m.before, 'mesin');
-  const con = $('console');
-  con.classList.remove('hidden');
-  $('console-result').innerHTML = '';
-  $('console-note').textContent = '';
-  const pre = $('console-sql');
-  pre.textContent = '';
-  for (let k = 0; k <= m.sql.length; k += 3) { pre.textContent = m.sql.slice(0, k); await new Promise((r) => setTimeout(r, 8)); }
-  pre.textContent = m.sql;
-  try {
-    const r = await machine.call('exec', { sql: m.sql, ordered: true });
-    renderGrid(r.last, $('console-result'), '');
-  } catch (e) { $('console-result').innerHTML = `<div class="sql-error">${esc(e.message)}</div>`; }
-  $('console-note').textContent = m.note;
-  await sayLine({ who: 'mesin', text: m.title + ': perintah selesai dijalankan.' });
-  con.classList.add('hidden');
+  await playLines([{ who: 'mesin', text: m.report, table: m.result }]);
   await playLines(m.after);
 }
 
@@ -239,7 +247,7 @@ $('tables').addEventListener('click', async (e) => {
     try {
       const r = await machine.call('peek', { table: name });
       feedback(null);
-      renderGrid(r.last, $('result'), `Isi tabel ${name} (contoh, tidak dihitung sebagai percobaan) · `);
+      renderGrid(r.last, $('result'), `Isi tabel ${name}: `);
     } catch (err) { $('result').innerHTML = `<div class="sql-error">${esc(err.message)}</div>`; }
   }
 });
@@ -257,96 +265,162 @@ function renderHints(id) {
   $('btn-h2').disabled = level >= 2 || !!S.done[id];
   $('btn-sol').disabled = level >= 3 || !!S.done[id];
   if (ch.points === 0) { $('btn-h1').textContent = 'Hint 1'; $('btn-h2').textContent = 'Hint 2'; $('btn-sol').textContent = 'Tampilkan contoh'; }
-  else { $('btn-h1').textContent = 'Hint 1 · maks 75%'; $('btn-h2').textContent = 'Hint 2 · maks 50%'; $('btn-sol').textContent = 'Tampilkan solusi · 0'; }
+  else { $('btn-h1').textContent = 'Hint 1'; $('btn-h2').textContent = 'Hint 2'; $('btn-sol').textContent = 'Tampilkan solusi'; }
 }
 
-const draftKey = (id) => 'bf-draft-' + id;
-function saveDraft() { try { if (current) localStorage.setItem(draftKey(current), $('editor').value); } catch (e) { /* abaikan */ } }
+const draftKey = (id) => 'draft:' + id;
+function saveDraft() {
+  if (ended || !current) return;
+  writeStore(draftKey(current), $('editor').value);
+}
+
+// Perintah terakhir di editor, tanpa titik koma penutup (untuk dibawa ke soal berikutnya)
+function lastStatement(sql) {
+  const parts = [];
+  let start = 0, quote = false, comment = false;
+  for (let i = 0; i < sql.length; i++) {
+    const c = sql[i];
+    if (comment) { if (c === '\n') comment = false; }
+    else if (c === "'") quote = !quote;
+    else if (!quote && c === '-' && sql[i + 1] === '-') comment = true;
+    else if (!quote && c === ';') { parts.push(sql.slice(start, i)); start = i + 1; }
+  }
+  parts.push(sql.slice(start));
+  return (parts.filter((p) => p.replace(/--[^\n]*/g, '').trim()).pop() || '').trim();
+}
+function answerOf(id) { return readStore('answer:' + id) || (S.answers && S.answers[id]) || ''; }
+function starterFor(ch) {
+  const answer = ch.carry ? lastStatement(answerOf(ch.prev)) : '';
+  if (answer && ch.carry === true) return answer + '\n';
+  if (answer) return `WITH tadi (${ch.carry}) AS (\n${answer.split('\n').map((l) => '    ' + l).join('\n')}\n)\nSELECT `;
+  return ch.starter || (ch.kind === 'action' ? '' : 'SELECT\n');
+}
+function afterOf(id) { return (S.after && S.after[id]) || C.chapters[id].after || []; }
+async function playAfter(id) {
+  const lines = afterOf(id);
+  if (lines.length) await playLines(lines);
+}
 
 async function runChapter(id) {
-  if (S.done[id]) return;
   const ch = C.chapters[id];
+  // dimuat ulang setelah soal benar tapi sebelum menekan Lanjut: putar cerita penutupnya
+  if (S.done[id]) { await playAfter(id); return; }
   current = id;
+  lastTx = { open: false };
   $('stage').classList.add('hidden');
   $('work').classList.remove('hidden');
-  $('bab-label').textContent = (CHAPTER_LABEL[id] + (ch.points ? ` · ${ch.points} poin` : ' · latihan, tidak dinilai')).toUpperCase();
+  $('solved').classList.add('hidden');
+  $('bab-label').textContent = (ch.label + (ch.points ? '' : ' (latihan, tidak dinilai)')).toUpperCase();
   $('bab-title').textContent = ch.title;
   $('bab-intro').textContent = nameOf(ch.intro || '');
+  $('bab-known').innerHTML = ch.known ? `<b>Yang sudah kamu tahu:</b> ${esc(ch.known)}` : '';
+  $('soal-label').textContent = ch.points ? `Soal (${ch.points} poin)` : 'Soal';
   $('bab-soal').textContent = ch.soal;
+  $('bab-pakai').textContent = ch.pakai;
   $('bab-bentuk').textContent = ch.bentuk;
   $('bab-catatan').innerHTML = (ch.catatan || []).map((c) => `<li>${esc(c)}</li>`).join('');
-  let draft = null;
-  try { draft = localStorage.getItem(draftKey(id)); } catch (e) { /* abaikan */ }
-  $('editor').value = draft ?? (ch.starter || (ch.kind === 'action' ? '-- tulis perintahmu di sini\n' : 'SELECT\n'));
-  $('btn-check').classList.toggle('hidden', ch.kind !== 'action');
+  const before = ch.prev && !ch.carry ? answerOf(ch.prev).trim() : '';
+  $('prev-block').classList.toggle('hidden', !before);
+  $('prev-sql').textContent = before;
+  const editor = $('editor');
+  editor.value = readStore(draftKey(id)) ?? starterFor(ch);
+  $('soal').scrollTop = 0;
   $('result').innerHTML = '';
-  feedback('info', ch.kind === 'action'
-    ? 'Jalankan perintahmu, lalu tekan <b>Periksa</b> kalau sudah yakin.'
-    : 'Setiap kali kamu menjalankan query, Mesin langsung mencocokkan hasilnya.');
+  $('run-status').textContent = '';
+  feedback('info', 'Setiap kali kamu menekan Jalankan, Mesin langsung memeriksa hasilnya.');
   renderHints(id);
   updateProgress();
+  const finished = new Promise((resolve) => { chapterResolve = resolve; });
   await buildArsip(ch);
-  $('editor').focus();
-  return new Promise((resolve) => { chapterResolve = resolve; });
+  editor.focus();
+  editor.setSelectionRange(editor.value.length, editor.value.length);
+  return finished;
 }
 
-async function chapterSolved(id, score, state) {
+// Tombol Lanjutkan cerita punya tempat sendiri, supaya tidak hilang saat query dijalankan lagi
+async function chapterSolved(id, score, state, sql) {
   if (state) S = state;
   updateProgress();
   const ch = C.chapters[id];
-  feedback('ok', ch.points
-    ? `Benar! Bab ini selesai dengan nilai <b>${score}</b> dari ${ch.points}. <button id="btn-continue" class="primary" style="margin-left:8px">Lanjutkan cerita</button>`
-    : `Berhasil. <button id="btn-continue" class="primary" style="margin-left:8px">Lanjutkan cerita</button>`);
+  if (sql) writeStore('answer:' + id, sql);
+  feedback(null);
+  const hasMore = Object.values(C.chapters).some((c) => c.prev === id);
+  $('solved-text').textContent = !ch.points ? 'Berhasil.'
+    : `Benar! Nilaimu ${score} dari ${ch.points}.` + (hasMore ? ` Masih ada satu soal lagi di ${ch.label}.` : '');
+  $('btn-continue').textContent = hasMore ? 'Soal berikutnya' : 'Lanjutkan cerita';
+  $('solved').classList.remove('hidden');
   renderHints(id);
   bell();
-  $('btn-continue').onclick = async () => {
-    current = null;
-    await playLines(ch.after);
-    const r = chapterResolve; chapterResolve = null; if (r) r();
-  };
+}
+$('btn-continue').addEventListener('click', async () => {
+  const id = current;
+  if (!id || busy || !S.done[id]) return;
+  if (lastTx.open) await machine.call('exec', { sql: 'ROLLBACK' }).catch(() => null);
+  saveDraft();
+  current = null;
+  lastTx = { open: false };
+  $('solved').classList.add('hidden');
+  await playAfter(id);
+  const r = chapterResolve; chapterResolve = null; if (r) r();
+});
+
+function sqlErrorHtml(sql, r) {
+  const { where, tip } = describeError(sql, r.error, r.position);
+  let html = `<div class="sql-error">ERROR: ${esc(r.error)}</div>`;
+  if (where) {
+    html += `<p class="err-where">Baris ${where.line}</p>`;
+    html += `<pre class="err-line">${esc(where.head)}<mark>${esc(where.token || ' ')}</mark>${esc(where.tail)}</pre>`;
+  }
+  if (tip) html += `<p class="err-tip">${esc(tip)}</p>`;
+  return html;
 }
 
 async function execEditor() {
-  const id = current;
-  if (!id || ended || locked) return;
-  const sql = $('editor').value.trim();
-  if (!sql) return;
+  if (busy || !current || ended || locked) return;
+  const sql = $('editor').value;       // tidak di-trim supaya nomor baris error cocok dengan editor
+  if (!sql.trim()) return;
+  busy = true;
+  $('btn-run').disabled = true;
+  try { await runSql(current, sql); }
+  finally {
+    busy = false;
+    $('btn-run').disabled = false;
+  }
+}
+
+async function runSql(id, sql) {
   saveDraft();
   const ch = C.chapters[id];
-  $('btn-run').disabled = true;
   $('run-status').textContent = 'Mesin bekerja…';
   let r;
   try {
     r = await machine.call('exec', { sql, ordered: !!ch.ordered }, 12000);
   } catch (e) {
-    $('btn-run').disabled = false;
+    $('run-status').textContent = '';
     if (e.timeout) {
-      $('run-status').textContent = '';
       feedback('bad', 'Mesin macet (query berjalan lebih dari 12 detik). Mesin dinyalakan ulang, dan data kembali ke awal bab ini.');
       api.log('TIMEOUT', sql, id);
       $('result').innerHTML = '';
       await machine.restart(replayScripts());
+      lastTx = { open: false };
       return;
     }
-    $('run-status').textContent = '';
     feedback('bad', esc(e.message));
     return;
   }
-  $('btn-run').disabled = false;
-  $('run-status').textContent = r.ok ? `selesai dalam ${r.ms} ms` : '';
+  $('run-status').textContent = '';
   lastTx = r.tx || { open: false };
   if (!r.ok) {
-    $('result').innerHTML = `<div class="sql-error">ERROR: ${esc(r.error)}</div>`;
-    feedback(r.tx && r.tx.aborted ? 'bad' : null, r.tx && r.tx.aborted ? 'Transaksimu dibatalkan karena error. Jalankan <b>ROLLBACK</b> dulu sebelum mencoba lagi.' : '');
+    $('result').innerHTML = sqlErrorHtml(sql, r);
+    feedback(r.tx && r.tx.aborted ? 'bad' : null, 'Transaksimu dibatalkan karena error. Jalankan <b>ROLLBACK</b> dulu sebelum mencoba lagi.');
     api.log('QUERY ERROR', r.error + ' | ' + sql, id);
     return;
   }
   if (r.last) renderGrid(r.last, $('result'), '');
-  else $('result').innerHTML = `<div class="result-meta">Perintah selesai${r.lastCommand && r.lastCommand.affectedRows !== null ? ` · ${r.lastCommand.affectedRows} baris terpengaruh` : ''}.</div>`;
-  if (lastTx.open) feedback('info', 'Kamu sedang di dalam transaksi. Perubahan belum permanen sampai <b>COMMIT</b> (atau batalkan dengan <b>ROLLBACK</b>).');
+  else $('result').innerHTML = `<div class="result-meta">Perintah selesai${r.lastCommand && r.lastCommand.affectedRows !== null ? `, ${r.lastCommand.affectedRows} baris terpengaruh` : ''}.</div>`;
+  if (lastTx.open) feedback('info', 'Kamu sedang di dalam transaksi. Jalankan <b>COMMIT</b> supaya bisa diperiksa, atau <b>ROLLBACK</b> untuk membatalkan.');
 
   if (S.done[id]) return;
-  if (ch.kind === 'action') api.log('QUERY', sql, id);   // bab aksi: setiap perintah tercatat (dikirim berkelompok)
   if (ch.kind === 'select') {
     const fp = r.fp ? { ...r.fp, unorderedHash: null } : null;
     if (fp && ch.ordered) {
@@ -355,9 +429,9 @@ async function execEditor() {
     }
     let res;
     try { res = await api.submitSelect(id, fp, sql); } catch (e) { return apiError(e); }
-    if (res.correct) await chapterSolved(id, res.score, res.state);
+    if (res.correct) await chapterSolved(id, res.score, res.state, sql);
     else feedback('bad', 'Belum cocok. ' + esc(res.feedback));
-  } else if (ch.kind === 'name') {
+  } else if (!lastTx.open) {
     await checkSteps(id, sql);
   }
 }
@@ -366,7 +440,6 @@ async function execEditor() {
 // hasilnya dinilai oleh server (atau LocalApi saat tes lokal).
 async function checkSteps(id, sql) {
   const ch = C.chapters[id];
-  if (lastTx.open) { feedback('bad', 'Kamu masih di dalam transaksi. Jalankan <b>COMMIT</b> atau <b>ROLLBACK</b> dulu, baru tekan Periksa.'); return; }
   $('run-status').textContent = 'Mesin memeriksa…';
   let outputs;
   try { outputs = (await machine.call('check', { steps: ch.steps }, 30000)).steps; }
@@ -381,8 +454,10 @@ async function checkSteps(id, sql) {
   $('run-status').textContent = '';
   if (res.correct) {
     if (ch.kind === 'name') playerName = (res.state && res.state.name) || typedName;
-    await chapterSolved(id, res.score, res.state);
-  } else feedback('bad', 'Belum lolos. ' + esc(res.feedback));
+    await chapterSolved(id, res.score, res.state, sql);
+  } else {
+    feedback('bad', 'Belum lolos. ' + esc(res.feedback));
+  }
 }
 
 // Kesalahan dari server
@@ -399,56 +474,84 @@ function sessionEnded(msg) {
 }
 
 $('btn-run').addEventListener('click', execEditor);
-$('btn-check').addEventListener('click', () => { if (current && !S.done[current]) checkSteps(current, $('editor').value); });
 $('btn-reset').addEventListener('click', async () => {
-  if (!(await ask('Reset data?', 'Database dikembalikan ke awal bab ini. Perubahan yang kamu buat di bab ini hilang, tapi isi editor tetap.'))) return;
+  if (busy) return;
+  if (!(await ask('Reset data?', 'Database dikembalikan ke awal bab ini. Perubahan yang kamu buat di bab ini hilang, tapi isi editor dan notes tetap.'))) return;
+  busy = true;
   $('run-status').textContent = 'Mengembalikan data…';
-  await machine.restart(replayScripts());
-  lastTx = { open: false };
-  $('run-status').textContent = 'Data dikembalikan ke awal bab.';
-  api.log('RESET', '', current);
-  if (current) buildArsip(C.chapters[current]);
+  try {
+    await machine.restart(replayScripts());
+    lastTx = { open: false };
+    $('run-status').textContent = 'Data dikembalikan ke awal bab.';
+    api.log('RESET', '', current);
+    if (current) await buildArsip(C.chapters[current]);
+  } catch (e) { $('run-status').textContent = 'Reset gagal. Coba sekali lagi.'; }
+  finally { busy = false; }
 });
 async function useHint(level) {
   const id = current; const ch = C.chapters[id];
-  if (ch.points && !api.isSantai && !(await ask(`Pakai Hint ${level}?`, `Nilai maksimal bab ini jadi ${level === 1 ? '75' : '50'}% (${ch.points * (level === 1 ? 0.75 : 0.5)} poin).`))) return;
+  if (ch.points && !api.isSantai && !(await ask(`Pakai Hint ${level}?`, `Nilai maksimal soal ini jadi ${level === 1 ? '75' : '50'}% (${ch.points * (level === 1 ? 0.75 : 0.5)} poin).`))) return;
   try { const r = await api.hint(id, level); S = r.state; renderHints(id); } catch (e) { apiError(e); }
 }
 $('btn-h1').addEventListener('click', () => useHint(1));
 $('btn-h2').addEventListener('click', () => useHint(2));
 $('btn-sol').addEventListener('click', async () => {
   const id = current; const ch = C.chapters[id];
-  if (ch.points && !api.isSantai && !(await ask('Tampilkan solusi?', 'Nilai bab ini jadi 0. Mesin menjalankan solusinya supaya cerita bisa lanjut.', 'Tampilkan solusi'))) return;
+  if (ch.points && !api.isSantai && !(await ask('Tampilkan solusi?', 'Nilai soal ini jadi 0. Mesin menjalankan solusinya supaya cerita bisa lanjut.', 'Tampilkan solusi'))) return;
   let sol;
   try { const r = await api.solution(id); S = r.state; sol = r.text; renderHints(id); } catch (e) { return apiError(e); }
   if (id === 'prolog') return; // nama harus diketik sendiri
-  $('editor').value = sol; saveDraft();
+  $('editor').value = sol;
+  saveDraft();
   if (ch.kind === 'select') await execEditor();
   else {
-    if (lastTx.open) await machine.call('exec', { sql: 'ROLLBACK' }).catch(() => null);
+    await machine.restart(replayScripts());   // hapus sisa percobaan (misalnya role yang sudah dibuat)
     lastTx = { open: false };
-    if (id === 'bab6') await machine.restart(replayScripts());   // hapus sisa percobaan (misalnya role yang sudah dibuat)
     const r = await machine.call('exec', { sql: sol }).catch((e) => ({ ok: false, error: e.message }));
     if (r.last) renderGrid(r.last, $('result'), '');
     await checkSteps(id, sol);
   }
 });
 
-// Editor: Ctrl+Enter, Tab, blokir paste
-const editor = $('editor');
-editor.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); execEditor(); return; }
-  if (e.key === 'Tab') {
-    e.preventDefault();
-    const s = editor.selectionStart, en = editor.selectionEnd;
-    editor.value = editor.value.slice(0, s) + '    ' + editor.value.slice(en);
-    editor.selectionStart = editor.selectionEnd = s + 4;
-  }
-});
-editor.addEventListener('input', () => { clearTimeout(editor.h); editor.h = setTimeout(saveDraft, 600); });
-for (const ev of ['paste', 'drop']) {
-  editor.addEventListener(ev, (e) => { e.preventDefault(); toast('Paste dimatikan. Ketik query-mu sendiri.'); api.log('PASTE', '', current || ''); });
+// Editor: Ctrl+Enter, Tab, dan copy paste yang hanya boleh dari dalam game
+const squash = (s) => String(s).replace(/\s+/g, ' ').trim();
+const copiedInGame = [];
+function rememberCopy() {
+  if ($('game').classList.contains('hidden')) return;
+  const el = document.activeElement;
+  const text = el && el.tagName === 'TEXTAREA' ? el.value.slice(el.selectionStart, el.selectionEnd) : String(getSelection());
+  if (!squash(text)) return;
+  copiedInGame.push(squash(text));
+  if (copiedInGame.length > 30) copiedInGame.shift();
 }
+document.addEventListener('copy', rememberCopy, true);
+document.addEventListener('cut', rememberCopy, true);
+
+function replaceSelection(el, text) {
+  el.focus();
+  // execCommand supaya Ctrl+Z tetap jalan
+  if (!document.execCommand('insertText', false, text)) el.setRangeText(text, el.selectionStart, el.selectionEnd, 'end');
+}
+function setupTextarea(el, isEditor) {
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && isEditor) { e.preventDefault(); execEditor(); return; }
+    if (e.key === 'Tab') { e.preventDefault(); replaceSelection(el, '    '); }
+  });
+  el.addEventListener('input', () => {
+    if (!isEditor) { if (!ended) writeStore('notes', el.value); return; }
+    clearTimeout(el.h); el.h = setTimeout(saveDraft, 600);
+  });
+  el.addEventListener('paste', (e) => {
+    e.preventDefault();
+    const text = (e.clipboardData ? e.clipboardData.getData('text/plain') : '').replace(/\r\n/g, '\n');
+    if (squash(text) && copiedInGame.includes(squash(text))) { replaceSelection(el, text); return; }
+    toast('Paste dari luar game dimatikan.');
+    api.log('PASTE', '', current || '');
+  });
+  el.addEventListener('drop', (e) => { e.preventDefault(); toast('Pakai copy paste di dalam game, bukan seret.'); });
+}
+setupTextarea($('editor'), true);
+setupTextarea($('notes'), false);
 document.addEventListener('contextmenu', (e) => { if (!$('game').classList.contains('hidden')) e.preventDefault(); });
 
 // ---------------------------------------------------------------------------------
@@ -456,10 +559,13 @@ document.addEventListener('contextmenu', (e) => { if (!$('game').classList.conta
 // ---------------------------------------------------------------------------------
 function totalScore() { return Math.min(100, Object.values(S.done || {}).reduce((a, d) => a + d.score, 0)); }
 function updateProgress() {
-  $('progress').innerHTML = CHAPTER_ORDER.map((id) => {
-    const d = S.done[id];
-    const cls = d ? (d.score === 0 && C.chapters[id].points ? 'dot zero' : 'dot done') : id === current ? 'dot now' : 'dot';
-    return `<span class="${cls}">${CHAPTER_LABEL[id]}</span>`;
+  const groups = new Map();   // dua soal dalam satu bab tampil sebagai satu bab
+  for (const [id, ch] of Object.entries(C.chapters)) groups.set(ch.label, [...(groups.get(ch.label) || []), id]);
+  $('progress').innerHTML = [...groups].map(([label, ids]) => {
+    const all = ids.every((id) => S.done[id]);
+    const zero = all && ids.every((id) => C.chapters[id].points && S.done[id].score === 0);
+    const cls = all ? (zero ? 'dot zero' : 'dot done') : ids.includes(current) ? 'dot now' : 'dot';
+    return `<span class="${cls}">${label}</span>`;
   }).join('');
   $('stat-score').textContent = String(Math.round(totalScore() * 100) / 100);
   $('stat-viol').textContent = `${S.violations || 0}/3`;
@@ -476,6 +582,7 @@ function endGame(title, text) {
   if (ended) return;
   ended = true;
   disarm();
+  clearStore();
   $('end-title').textContent = title;
   $('end-text').innerHTML = `${esc(text)}<br><br>` + (api.isSantai
     ? 'Mode santai: tidak dinilai.'
@@ -549,6 +656,10 @@ $('btn-dev-unlock').addEventListener('click', async () => { await api.devUnlock(
 // Alur utama
 // ---------------------------------------------------------------------------------
 async function runFlow() {
+  if ((S.flow || 0) >= C.flow.length) {
+    endGame('Game sudah selesai', 'Kamu sudah menamatkan cerita ini.');
+    return;
+  }
   for (let i = S.flow || 0; i < C.flow.length && !ended; i++) {
     const it = C.flow[i];
     if (it.kind === 'title') await showTitle(it.text, it.sub, '');
@@ -558,10 +669,12 @@ async function runFlow() {
     else if (it.kind === 'machine') await runMachineScene(it.id);
     else if (it.kind === 'chapter') await runChapter(it.id);
     else if (it.kind === 'bonusGate') {
-      await playLines([{ who: 'barnaby', text: 'Dulu, si pembakar masih punya satu kartu cadangan. Mau mengunci pintu terakhir, Nak?' }], 'mesin');
-      const yes = await ask('Bonus (+5)', 'Kerjakan bonus "Kebenaran yang Tidak Bisa Dihapus" sebelum ending? Kalau dilewati, ending tetap utuh.', 'Kerjakan bonus', 'Lewati ke ending');
+      if (S.done.bonus) { await runChapter('bonus'); S.flow = i + 1; api.setFlow(i + 1).catch(() => null); continue; }
+      await playLines(it.lines, 'mesin');
+      const yes = await ask('Bonus (+5)', 'Kerjakan soal bonus dulu? Kalau dilewati, ceritanya tetap tamat.', 'Kerjakan bonus', 'Lewati');
       if (yes) await runChapter('bonus');
     } else if (it.kind === 'ending') {
+      updateProgress();
       for (const ln of C.ending) { if (ln.ifBonus && !S.done.bonus) continue; await playLines([ln], ln.bg); }
       endGame('Kebenaran selamat', `Sabtu, 31 Oktober 1891. Terima kasih sudah bermain, ${playerName || 'Operator'}.`);
     }
@@ -601,7 +714,7 @@ function waitCountdown() {
   }
   btn.disabled = true;
   const m = Math.floor(left / 60000), s = Math.floor((left % 60000) / 1000);
-  $('ready-text').textContent = `Mesin siap. Quiz dimulai dalam ${m}:${String(s).padStart(2, '0')}. Tombol Mulai aktif begitu waktunya tiba.`;
+  $('ready-text').textContent = `Quiz dimulai dalam ${m}:${String(s).padStart(2, '0')}. Tombol Mulai aktif begitu waktunya tiba.`;
   setTimeout(waitCountdown, 1000);
 }
 
@@ -624,19 +737,20 @@ async function boot() {
       offset = res.offset || 0;
       C = res.content;
       S = res.state;
+      if (!(S.flow || 0) && !Object.keys(S.done || {}).length) clearStore();   // permainan baru (misalnya akun uji di-reset)
+      openStore(res.nim);
+      $('notes').value = readStore('notes') || '';
       deadline = res.window.end || 0;
       startAt = res.mode === 'wait' ? res.window.start : 0;
       playerName = S.name || null;
       if (api instanceof ProdApi) api.onNetwork = (okNet) => $('stat-timer').title = okNet ? 'Sisa waktu' : 'Koneksi ke server terputus, mencoba lagi…';
       show('loading');
-      $('loading-text').textContent = 'Menyalakan Mesin Analitik… (sekitar 5–15 detik)';
-      const t0 = performance.now();
+      $('loading-text').textContent = 'Menyalakan Mesin Analitik…';
       await startMachine();
-      const secs = Math.round((performance.now() - t0) / 100) / 10;
       show('ready');
-      if (api.isSantai) $('ready-text').textContent = `Mode santai (tidak dinilai). Mesin siap dalam ${secs} detik.`;
+      if (api.isSantai) $('ready-text').textContent = 'Mode santai (tidak dinilai).';
       else if (startAt) waitCountdown();
-      else $('ready-text').textContent = `Mesin siap dalam ${secs} detik. Tekan Mulai untuk masuk ke layar penuh.`;
+      else $('ready-text').textContent = 'Tekan Mulai untuk masuk ke layar penuh.';
     } catch (e) {
       show('login');
       $('login-err').textContent = e.message;
@@ -644,7 +758,10 @@ async function boot() {
       $('btn-login').disabled = false;
     }
   });
+  let started = false;
   $('btn-start').addEventListener('click', async () => {
+    if (started) return;
+    started = true;
     if (ANTICHEAT) await goFull();
     show('game');
     arm();

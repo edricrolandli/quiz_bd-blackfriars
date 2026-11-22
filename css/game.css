@@ -81,8 +81,6 @@ button:disabled { opacity: .55; cursor: default; }
 .dialog-actions { display: flex; flex-direction: column; gap: 8px; align-self: flex-end; }
 #console { position: relative; margin: 0 auto 12px; width: min(980px, calc(100% - 32px)); max-height: 55%; overflow: auto; background: #12110e; border: 1px solid var(--brass); border-radius: 8px; color: #e9dfc6; padding: 12px 14px; }
 .console-head { font-size: 12px; color: var(--brass); margin-bottom: 6px; letter-spacing: .5px; }
-#console pre { margin: 0 0 10px; font-family: var(--mono); font-size: 13px; white-space: pre-wrap; color: #f7d58f; }
-#console-note { margin: 8px 0 0; font-size: 13px; color: #d8c9a6; font-style: italic; }
 
 /* ---------------- work (bab) */
 #work { flex: 1; min-height: 0; display: grid; grid-template-columns: 220px minmax(300px, 0.9fr) minmax(380px, 1.3fr); background: var(--paper); }
@@ -104,6 +102,7 @@ button:disabled { opacity: .55; cursor: default; }
 .bab-label { font-size: 12px; color: var(--accent); letter-spacing: .5px; }
 #bab-title { font-family: var(--serif); margin: 2px 0 8px; font-size: 22px; }
 .intro { font-family: var(--serif); font-style: italic; color: var(--ink-soft); line-height: 1.6; margin: 0 0 12px; }
+.known { margin: 0 0 12px; font-size: 14px; line-height: 1.5; }
 .box { background: var(--paper-3); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
 .box-label { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--ink-soft); }
 .box p { margin: 2px 0 10px; line-height: 1.55; }
@@ -123,6 +122,14 @@ summary { cursor: pointer; font-weight: 600; font-size: 14px; }
 #editor { flex: none; height: 210px; resize: vertical; width: 100%; font-family: var(--mono); font-size: 14px; line-height: 1.5; padding: 10px; border: 1px solid var(--line); border-radius: 6px; background: #fffdf7; color: var(--ink); tab-size: 4; }
 .editor-actions { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
 #run-status { font-size: 12px; color: var(--ink-soft); }
+#notes { flex: none; width: 100%; resize: vertical; font-family: var(--mono); font-size: 14px; line-height: 1.5; padding: 10px; border: 1px solid var(--line); border-radius: 6px; background: #fffdf7; color: var(--ink); tab-size: 4; }
+#prev-block { flex: none; margin-bottom: 10px; }
+#prev-sql { margin: 4px 0 0; padding: 8px 10px; max-height: 130px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--paper-2); font-family: var(--mono); font-size: 13px; white-space: pre-wrap; }
+#solved { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; margin-bottom: 8px; background: #e3efdc; color: var(--ok); border: 1px solid #a9c99c; }
+#feedback { flex: none; }
+#notes-wrap { flex: none; margin-top: 12px; }
+#notes { height: 120px; }
+.notes-help { font-size: 12px; color: var(--ink-soft); margin: 4px 0; }
 #feedback { padding: 9px 12px; border-radius: 6px; margin-bottom: 8px; font-size: 14px; line-height: 1.5; }
 #feedback.ok { background: #e3efdc; color: var(--ok); border: 1px solid #a9c99c; }
 #feedback.bad { background: #f6e2de; color: var(--bad); border: 1px solid #ddb0a8; }
@@ -137,6 +144,10 @@ table.grid td.null { color: #a89a80; font-style: italic; }
 #console table.grid th { background: #2a2620; color: #f7d58f; }
 #console table.grid th, #console table.grid td { border-color: #4a463f; }
 .sql-error { color: var(--bad); font-family: var(--mono); font-size: 13px; white-space: pre-wrap; }
+.err-where { margin: 6px 0 0; color: var(--ink); }
+.err-line { margin: 2px 0 0; padding: 6px 8px; background: #fffdf7; border: 1px solid var(--line); color: var(--ink); white-space: pre-wrap; }
+.err-line mark { background: #f3b5ac; padding: 0 2px; }
+.err-tip { margin: 6px 0 0; font-family: var(--sans); color: var(--ink); }
 pre.solution { background: #12110e; color: #f7d58f; padding: 10px; border-radius: 6px; font-size: 13px; white-space: pre-wrap; }
 
 .overlay { position: fixed; inset: 0; background: rgba(15, 13, 11, .88); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 16px; }

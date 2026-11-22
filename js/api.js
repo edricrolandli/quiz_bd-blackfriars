@@ -35,7 +35,7 @@ export class LocalApi {
   }
   _load() { try { return JSON.parse(localStorage.getItem(this.key)) || null; } catch (e) { return null; } }
   _save(s) { try { localStorage.setItem(this.key, JSON.stringify(s)); } catch (e) { /* abaikan */ } }
-  _pub(s) { return { flow: s.flow, name: s.name, done: s.done, hints: s.hints, hintTexts: hintTexts(this.content, s.hints), violations: s.violations, locked: s.locked, finished: s.finished }; }
+  _pub(s) { return { flow: s.flow, name: s.name, done: s.done, replay: this.content.replay, hints: s.hints, hintTexts: hintTexts(this.content, s.hints), violations: s.violations, locked: s.locked, finished: s.finished }; }
 
   async login(nim) {
     if (!nim) throw new Error('Isi NIM dulu.');

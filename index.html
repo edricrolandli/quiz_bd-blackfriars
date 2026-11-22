@@ -13,7 +13,7 @@
     <div class="login-card">
       <div class="crest" id="login-crest"></div>
       <h1>Malam yang Berulang di Blackfriars</h1>
-      <p class="sub">Quiz praktikum Basis Data · London, 1891</p>
+      <p class="sub">Quiz praktikum Basis Data, London 1891</p>
       <label>NIM<input id="in-nim" autocomplete="off" inputmode="numeric" placeholder="251401001"></label>
       <label>Kode akses<input id="in-code" autocomplete="off" placeholder="dari email USU-mu"></label>
       <p class="err" id="login-err"></p>
@@ -39,7 +39,7 @@
 
   <section id="game" class="hidden">
     <header id="topbar">
-      <div class="brand">Mesin Analitik · Blackfriars</div>
+      <div class="brand">Mesin Analitik Blackfriars</div>
       <div id="progress"></div>
       <div class="stats">
         <span id="stat-score" title="Nilai">0</span>
@@ -52,10 +52,7 @@
       <div id="stage-bg"></div>
       <div id="stage-title" class="hidden"><div class="t1"></div><div class="t2"></div></div>
       <div id="console" class="hidden">
-        <div class="console-head">Mesin Analitik · perintah</div>
-        <pre id="console-sql"></pre>
         <div id="console-result"></div>
-        <p id="console-note"></p>
       </div>
       <div id="dialog">
         <div id="portrait"></div>
@@ -64,7 +61,6 @@
           <p id="line"></p>
         </div>
         <div class="dialog-actions">
-          <button id="btn-all" class="ghost">Tampilkan semua</button>
           <button id="btn-next" class="primary">Lanjut</button>
         </div>
       </div>
@@ -79,21 +75,24 @@
         <div class="bab-label" id="bab-label"></div>
         <h2 id="bab-title"></h2>
         <p id="bab-intro" class="intro"></p>
+        <p id="bab-known" class="known"></p>
         <div class="box">
-          <div class="box-label">Soal</div>
+          <div class="box-label" id="soal-label">Soal</div>
           <p id="bab-soal"></p>
+          <div class="box-label">Pakai</div>
+          <p id="bab-pakai" class="mono"></p>
           <div class="box-label">Bentuk hasil</div>
           <p id="bab-bentuk" class="mono"></p>
         </div>
         <details id="catatan-wrap" open>
-          <summary>Catatan (gratis)</summary>
+          <summary>Catatan</summary>
           <ul id="bab-catatan"></ul>
         </details>
         <div id="hints"></div>
         <div class="hint-actions">
-          <button id="btn-h1">Hint 1 · maks 75%</button>
-          <button id="btn-h2">Hint 2 · maks 50%</button>
-          <button id="btn-sol" class="danger-ghost">Tampilkan solusi · 0</button>
+          <button id="btn-h1">Hint 1</button>
+          <button id="btn-h2">Hint 2</button>
+          <button id="btn-sol" class="danger-ghost">Tampilkan solusi</button>
         </div>
       </section>
       <section id="editor-wrap">
@@ -101,15 +100,24 @@
           <span>Bahasa Mesin (SQL)</span>
           <span class="kbd">Ctrl + Enter = jalankan</span>
         </div>
+        <div id="prev-block" class="hidden"><div class="box-label">Jawabanmu tadi, sudah benar</div><pre id="prev-sql"></pre></div>
         <textarea id="editor" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
         <div class="editor-actions">
           <button id="btn-run" class="primary">Jalankan</button>
-          <button id="btn-check" class="hidden">Periksa</button>
           <button id="btn-reset" class="ghost">Reset data</button>
           <span id="run-status"></span>
         </div>
+        <div id="solved" class="hidden">
+          <span id="solved-text"></span>
+          <button id="btn-continue" class="primary">Lanjutkan cerita</button>
+        </div>
         <div id="feedback" class="hidden"></div>
         <div id="result"></div>
+        <details id="notes-wrap">
+          <summary>Notes</summary>
+          <p class="notes-help">Simpan query-mu di sini. Copy paste di dalam game boleh, dari luar game tetap diblokir.</p>
+          <textarea id="notes" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        </details>
       </section>
     </div>
 
